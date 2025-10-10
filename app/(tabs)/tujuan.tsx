@@ -1,3 +1,4 @@
+// app/(tabs)/tujuan.tsx
 import ProgressBar from "@components/ProgressBar";
 import { useAppContext } from "@context/AppContext";
 import { Ionicons } from "@expo/vector-icons";
@@ -70,7 +71,7 @@ export default function Tujuan() {
           <Text style={styles.empty}>Belum ada tujuan.</Text>
         }
         contentContainerStyle={
-          goals.length === 0 ? { flex: 1, justifyContent: "center" } : null
+          goals.length === 0 ? { flex: 1, justifyContent: "center" } : undefined
         }
       />
     </View>
@@ -81,7 +82,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 12,
-    backgroundColor: "#f9fafb",
+    backgroundColor: "transparent", // use transparent so full app background shows
   },
   empty: {
     textAlign: "center",

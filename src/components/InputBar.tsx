@@ -43,7 +43,6 @@ export default function InputBar({
     if (!title.trim()) return;
 
     if (activeTab === "Tugas") {
-      // Optional reminder time ISO string
       const reminderISO =
         date && time ? new Date(`${date}T${time}:00`).toISOString() : undefined;
 
@@ -51,7 +50,7 @@ export default function InputBar({
         title: title.trim(),
         description: description.trim(),
         dueDate: date || undefined,
-        reminderTimeISO: reminderISO, // ✅ fixed key name
+        reminderTimeISO: reminderISO,
       });
     } else if (activeTab === "Tujuan") {
       await addGoal({
@@ -60,7 +59,6 @@ export default function InputBar({
         target: Number(target) || 1,
         targetDate: date || undefined,
       });
-      // ✅ Removed "unit" — not part of the Goal model (we could add later if needed)
     } else if (activeTab === "Pengingat") {
       if (!date || !time) {
         alert("Masukkan tanggal dan waktu pengingat (YYYY-MM-DD dan HH:MM).");
@@ -70,7 +68,7 @@ export default function InputBar({
       const dt = new Date(`${date}T${time}:00`).toISOString();
       await addReminder({
         title: title.trim(),
-        dateTimeISO: dt, // ✅ fixed key name
+        dateTimeISO: dt,
         message: description.trim(),
       });
     }
@@ -79,6 +77,7 @@ export default function InputBar({
     onClose();
   };
 
+  const placeholderColor = "#6b7280"; // visible gray on white modal
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -88,12 +87,14 @@ export default function InputBar({
 
             <TextInput
               placeholder="Judul"
+              placeholderTextColor={placeholderColor}
               value={title}
               onChangeText={setTitle}
               style={styles.input}
             />
             <TextInput
               placeholder="Deskripsi (opsional)"
+              placeholderTextColor={placeholderColor}
               value={description}
               onChangeText={setDescription}
               style={[styles.input, { height: 80 }]}
@@ -102,12 +103,14 @@ export default function InputBar({
 
             <TextInput
               placeholder="Tanggal (YYYY-MM-DD)"
+              placeholderTextColor={placeholderColor}
               value={date}
               onChangeText={setDate}
               style={styles.input}
             />
             <TextInput
               placeholder="Waktu (HH:MM)"
+              placeholderTextColor={placeholderColor}
               value={time}
               onChangeText={setTime}
               style={styles.input}
@@ -117,6 +120,7 @@ export default function InputBar({
               <>
                 <TextInput
                   placeholder="Target (angka)"
+                  placeholderTextColor={placeholderColor}
                   value={target}
                   onChangeText={setTarget}
                   style={styles.input}
@@ -124,6 +128,7 @@ export default function InputBar({
                 />
                 <TextInput
                   placeholder="Satuan (contoh: tugas)"
+                  placeholderTextColor={placeholderColor}
                   value={unit}
                   onChangeText={setUnit}
                   style={styles.input}
@@ -162,13 +167,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
   },
-  heading: { fontSize: 18, fontWeight: "700", marginBottom: 10 },
+  heading: { fontSize: 18, fontWeight: "700", marginBottom: 10, color: "#111" },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 6,
     padding: 10,
     marginBottom: 10,
+    color: "#111", // ensure text is dark inside inputs
   },
   buttons: { flexDirection: "row", justifyContent: "space-between" },
 });

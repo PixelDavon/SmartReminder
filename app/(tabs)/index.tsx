@@ -4,11 +4,9 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import React, { useState } from "react";
 import { StyleSheet, TouchableOpacity, View } from "react-native";
 
-// Provider & components (relative paths assume `app` and `src` are siblings at project root)
-import InputBar from "../../src/components/InputBar";
-import AppProvider from "../../src/context/AppContext";
+import InputBar from "@components/InputBar";
+import AppProvider from "@context/AppContext";
 
-// Screens (you moved these into app/(tabs) as tugas.tsx, tujuan.tsx, pengingat.tsx)
 import Pengingat from "./pengingat";
 import Tugas from "./tugas";
 import Tujuan from "./tujuan";
@@ -27,19 +25,28 @@ export default function TabsLayout() {
         <Tab.Navigator
           initialRouteName="Tugas"
           screenListeners={{
-            // keep track of the active tab so InputBar knows which kind to create
+            // keep track of active tab so InputBar knows which kind to create
             state: (e: any) => {
               try {
                 const route = e.data.state.routes[e.data.state.index];
                 if (route?.name) setActiveTab(route.name as "Tugas" | "Tujuan" | "Pengingat");
               } catch (err) {
-                // ignore (defensive)
+                // defensive
               }
             },
           }}
           screenOptions={({ route }) => ({
             headerShown: false,
-            // simple icon factory — kept type loose to avoid glyphMap type issues
+            tabBarActiveTintColor: "#2563eb",
+            tabBarInactiveTintColor: "#9ca3af",
+            tabBarLabelStyle: { fontSize: 12 },
+            tabBarStyle: {
+              height: 64,
+              paddingBottom: 8,
+              backgroundColor: "#0b0b0b", // match app dark-ish theme
+              borderTopWidth: 0,
+            },
+            // simple icon factory
             tabBarIcon: ({ color, size }) => {
               let iconName: string = "ellipse";
               if (route.name === "Tugas") iconName = "checkmark-done-outline";
@@ -54,12 +61,12 @@ export default function TabsLayout() {
           <Tab.Screen name="Pengingat" component={Pengingat} />
         </Tab.Navigator>
 
-        {/* Floating Action Button */}
+        {/* Floating Action Button - elevated above tab bar */}
         <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
           <Ionicons name="add" size={28} color="#fff" />
         </TouchableOpacity>
 
-        {/* Input modal (the InputBar reads/writes to context) */}
+        {/* Input modal */}
         <InputBar visible={modalVisible} onClose={() => setModalVisible(false)} activeTab={activeTab} />
       </View>
     </AppProvider>
@@ -70,7 +77,7 @@ const styles = StyleSheet.create({
   fab: {
     position: "absolute",
     right: 20,
-    bottom: 30,
+    bottom: 90, // raised so it doesn't overlap the tab bar
     backgroundColor: "#2563eb",
     borderRadius: 30,
     width: 60,

@@ -1,35 +1,18 @@
-import { Tabs } from 'expo-router';
+// app/(tabs)/layout_tsx
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Slot } from 'expo-router';
 import React from 'react';
 
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
+/**
+ * IMPORTANT:
+ * We intentionally DO NOT render expo-router <Tabs /> here because the app
+ * implements its own BottomTabNavigator inside app/(tabs)/index.tsx.
+ * Rendering expo-router Tabs + the custom BottomTabNavigator caused the
+ * duplicate bottom bar you saw. Returning <Slot /> lets the child index.tsx
+ * render full-screen without a second tab bar.
+ */
 export default function TabLayout() {
+  // colorScheme kept in case you want to wrap/adjust in future
   const colorScheme = useColorScheme();
-
-  return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
-  );
+  return <Slot />;
 }
