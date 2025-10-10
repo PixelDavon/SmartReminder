@@ -1,4 +1,5 @@
 // src/components/InputBar.tsx
+import DateTimePickerRow from "@components/DateTimePickerRow";
 import { useAppContext } from "@context/AppContext";
 import React, { useState } from "react";
 import {
@@ -77,7 +78,7 @@ export default function InputBar({
     onClose();
   };
 
-  const placeholderColor = "#6b7280"; // visible gray on white modal
+  const placeholderColor = "#6b7280";
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -101,20 +102,8 @@ export default function InputBar({
               multiline
             />
 
-            <TextInput
-              placeholder="Tanggal (YYYY-MM-DD)"
-              placeholderTextColor={placeholderColor}
-              value={date}
-              onChangeText={setDate}
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Waktu (HH:MM)"
-              placeholderTextColor={placeholderColor}
-              value={time}
-              onChangeText={setTime}
-              style={styles.input}
-            />
+            {/* Native date/time picker row with Clear + pretty display */}
+            <DateTimePickerRow date={date} time={time} onDateChange={setDate} onTimeChange={setTime} />
 
             {activeTab === "Tujuan" && (
               <>
@@ -174,7 +163,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 10,
     marginBottom: 10,
-    color: "#111", // ensure text is dark inside inputs
+    color: "#111",
   },
   buttons: { flexDirection: "row", justifyContent: "space-between" },
 });

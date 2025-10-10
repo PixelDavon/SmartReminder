@@ -1,57 +1,42 @@
-import { useAppContext } from "@context/AppContext";
-import { Ionicons } from "@expo/vector-icons";
-import React from "react";
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+// app/(tabs)/tugas.tsx
+import DateTimePickerRow from "@components/DateTimePickerRow";
+import React, { useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 
 export default function Tugas() {
-  const { tasks, toggleTaskCompletion, removeTask } = useAppContext();
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={tasks}
-        keyExtractor={(i) => i.id}
-        ListEmptyComponent={<Text style={styles.empty}>Belum ada tugas.</Text>}
-        renderItem={({ item }) => (
-          <View style={[styles.item, item.completed && styles.completed]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.title}>{item.title}</Text>
-              {item.description ? <Text style={styles.desc}>{item.description}</Text> : null}
-              {item.dueDate ? <Text style={styles.meta}>Due: {item.dueDate}</Text> : null}
-              {item.reminderTimeISO ? (
-                <Text style={styles.meta}>
-                  Remind: {new Date(item.reminderTimeISO).toLocaleString()}
-                </Text>
-              ) : null}
-            </View>
-
-            <View style={styles.actions}>
-              <TouchableOpacity onPress={() => toggleTaskCompletion(item.id)} style={styles.actionBtn}>
-                <Ionicons
-                  name={item.completed ? "checkmark-circle" : "checkmark-circle-outline"}
-                  size={24}
-                  color="#2b8a3e"
-                />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => removeTask(item.id)} style={styles.actionBtn}>
-                <Ionicons name="trash" size={22} color="#c23030" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+      <Text style={styles.title}>Tambah Tugas</Text>
+      <DateTimePickerRow
+        date={date}
+        time={time}
+        onDateChange={setDate}
+        onTimeChange={setTime}
       />
+      <Text style={styles.preview}>
+        {date && time ? `Tugas dijadwalkan: ${date} ${time}` : "Belum ada jadwal"}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 12 },
-  empty: { textAlign: "center", marginTop: 20, color: "#666" },
-  item: { backgroundColor: "#fff", padding: 12, borderRadius: 8, marginBottom: 10, flexDirection: "row" },
-  completed: { opacity: 0.7 },
-  title: { fontWeight: "600", fontSize: 16 },
-  desc: { color: "#555", marginTop: 4 },
-  meta: { color: "#888", marginTop: 6, fontSize: 12 },
-  actions: { justifyContent: "center", alignItems: "center" },
-  actionBtn: { padding: 6 },
+  container: {
+    flex: 1,
+    backgroundColor: "#0b0b0b",
+    padding: 20,
+  },
+  title: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 20,
+  },
+  preview: {
+    color: "#ccc",
+    marginTop: 10,
+  },
 });
