@@ -19,8 +19,8 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [inputVisible, setInputVisible] = useState(false);
   const [editItem, setEditItem] = useState<any>(null);
-
   const pathname = usePathname();
+
   const tabNameMap: Record<string, 'Home' | 'Tugas' | 'Tujuan' | 'Pengingat'> = {
     '/': 'Home',
     '/tugas': 'Tugas',
@@ -33,20 +33,16 @@ export default function TabLayout() {
   useEffect(() => {
     const tab = tabNameMap[pathname] || 'Home';
     setActiveTab(tab);
-    //console.log('[DEBUG] activeTab changed:', tab);
   }, [pathname]);
 
   const fabBottom = insets.bottom + 90;
 
-  // open "add new item" modal
   const openAddModal = () => {
     setEditItem(null);
     setInputVisible(true);
   };
 
-  // open "edit existing item" modal
   const openEditModal = (tab: 'Tugas' | 'Tujuan', item: any) => {
-    //console.log('[DEBUG] openEditModal tab:', tab, 'item:', item);
     setEditItem(item);
     setInputVisible(true);
   };
@@ -102,7 +98,7 @@ export default function TabLayout() {
               </Tabs>
             </View>
 
-            {activeTab !== 'Pengingat' && (
+            {activeTab === 'Tugas' || activeTab === 'Tujuan' ? (
               <TouchableOpacity
                 accessibilityLabel="Tambah item"
                 onPress={openAddModal}
@@ -110,12 +106,12 @@ export default function TabLayout() {
               >
                 <Text style={styles.fabIcon}>＋</Text>
               </TouchableOpacity>
-            )}
+            ) : null}
 
             <InputBar
               visible={inputVisible}
               onClose={() => setInputVisible(false)}
-              activeTab={activeTab} // <-- always current activeTab
+              activeTab={activeTab}
               editItem={editItem}
             />
           </EditModalContext.Provider>

@@ -29,11 +29,9 @@ export default function InputBar({
   activeTab: 'Home' | 'Tugas' | 'Tujuan' | 'Pengingat';
   editItem?: any;
 }) {
-  //console.log('[DEBUG] InputBar props activeTab:', activeTab, 'editItem:', editItem);
   const ctx = useAppContext();
   const insets = useSafeAreaInsets();
 
-  // Prefill fields if editing
   const [title, setTitle] = useState(editItem?.title ?? '');
   const [description, setDescription] = useState(editItem?.description ?? '');
   const [date, setDate] = useState(
@@ -49,19 +47,15 @@ export default function InputBar({
   const [target, setTarget] = useState(editItem?.target ? String(editItem.target) : '1');
   const [unit, setUnit] = useState(editItem?.unit ?? '');
   const [priority, setPriority] = useState<Priority>(editItem?.priority ?? 'medium');
-  const [reminderType, setReminderType] = useState<'none' | 'daily' | 'priority'>('none');
+  const [reminderType, setReminderType] = useState<'none' | 'daily' | 'priority'>(editItem?.reminderType ?? 'none');
   const [progress, setProgress] = useState(editItem?.progress ? String(editItem.progress) : '0');
 
   useEffect(() => {
     if (!visible) clearAll();
-    if (visible) {
-      //console.log('[DEBUG] InputBar modal opened with activeTab:', activeTab, 'editItem:', editItem);
-    }
   }, [visible]);
 
   useEffect(() => {
     if (editItem) {
-      //console.log('[DEBUG] InputBar editItem changed:', editItem);
       setTitle(editItem.title ?? '');
       setDescription(editItem.description ?? '');
       setDate(
@@ -77,6 +71,7 @@ export default function InputBar({
       setTarget(editItem.target ? String(editItem.target) : '1');
       setUnit(editItem.unit ?? '');
       setPriority(editItem.priority ?? 'medium');
+      setReminderType(editItem.reminderType ?? 'none');
       setProgress(editItem.progress ? String(editItem.progress) : '0');
     }
   }, [editItem, visible]);
@@ -93,7 +88,6 @@ export default function InputBar({
     setProgress('0');
   };
 
-  // validation for date/time — already works well
   useEffect(() => {
     if (!date) return;
     const todayStart = new Date();
@@ -105,7 +99,6 @@ export default function InputBar({
       setTime('');
       return;
     }
-
     if (time) {
       const [hh, mm] = time.split(':');
       const combined = new Date(
@@ -129,41 +122,10 @@ export default function InputBar({
       return;
     }
 
-    const iso = buildISOFromDateAndTime(date || undefined, time || undefined) ?? undefined;
-
-    if (date) {
-      const selectedDateStart = new Date(`${date}T00:00:00`);
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      if (selectedDateStart.getTime() < todayStart.getTime()) {
-        Alert.alert('Tanggal tidak valid', 'Tanggal tidak boleh sebelum hari ini.');
-        return;
-      }
-      if (time) {
-        const [hh, mm] = time.split(':');
-        const combined = new Date(
-          selectedDateStart.getFullYear(),
-          selectedDateStart.getMonth(),
-          selectedDateStart.getDate(),
-          Number(hh),
-          Number(mm),
-          0
-        );
-        if (combined.getTime() < Date.now()) {
-          Alert.alert('Waktu tidak valid', 'Waktu sudah lewat untuk tanggal yang dipilih.');
-          return;
-        }
-      }
-    } else if (reminderType !== 'none' && activeTab === 'Pengingat') {
-      Alert.alert('Validation', 'Masukkan tanggal & waktu pengingat.');
-      return;
-    }
+    const iso = buildISOFromDateAndTime(date || undefined, time || '00:00') ?? undefined;
 
     try {
-      // Treat "Home" as "Tugas"
-      const tab = activeTab === 'Home' ? 'Tugas' : activeTab;
-
-      if (tab === 'Tugas') {
+      if (activeTab === 'Tugas') {
         if (editItem) {
           await ctx.editTask({
             ...editItem,
@@ -171,6 +133,8 @@ export default function InputBar({
             description: description.trim() || undefined,
             dueDate: date || undefined,
             priority,
+            reminderTimeISO: iso ?? null,
+            reminderType,
           });
         } else {
           await ctx.addTask({
@@ -180,9 +144,9 @@ export default function InputBar({
             reminderTimeISO: iso ?? null,
             priority,
             reminderType,
-          } as any);
+          });
         }
-      } else if (tab === 'Tujuan') {
+      } else if (activeTab === 'Tujuan') {
         if (editItem) {
           await ctx.editGoal({
             ...editItem,
@@ -193,6 +157,8 @@ export default function InputBar({
             targetDate: date || undefined,
             priority,
             progress: Math.max(0, Number(progress)),
+            reminderTimeISO: iso ?? null,
+            reminderType,
           });
         } else {
           await ctx.addGoal({
@@ -202,23 +168,23 @@ export default function InputBar({
             unit: unit || undefined,
             targetDate: date || undefined,
             priority,
+            progress: Math.max(0, Number(progress)),
             reminderTimeISO: iso ?? null,
             reminderType,
-          } as any);
+          });
         }
-      } else if (tab === 'Pengingat') {
+      } else if (activeTab === 'Pengingat') {
         if (!iso) {
           Alert.alert('Validation', 'Masukkan tanggal & waktu pengingat.');
           return;
         }
-        // Editing reminders not implemented here, but can be added similarly
         await ctx.addReminder({
           title: title.trim(),
           message: description.trim() || undefined,
           dateTimeISO: iso,
           repeat: reminderType === 'daily' ? 'daily' : 'none',
           priority,
-        } as any);
+        });
       }
     } catch (err) {
       console.warn('save failed', err);
@@ -226,7 +192,7 @@ export default function InputBar({
       return;
     }
 
-    onClose();
+    onClose(); // no undo snackbar
   };
 
   return (
@@ -241,16 +207,16 @@ export default function InputBar({
               {editItem
                 ? activeTab === 'Tujuan'
                   ? 'Edit Tujuan'
-                  : activeTab === 'Tugas' || activeTab === 'Home'
+                  : activeTab === 'Tugas'
                   ? 'Edit Tugas'
-                  : 'Edit Pengingat'
-                : activeTab === 'Home'
-                ? 'Tambah Tugas'
+                  : activeTab === 'Pengingat'
+                  ? 'Edit Pengingat'
+                  : ''
                 : activeTab === 'Tujuan'
                 ? 'Tambah Tujuan'
-                : activeTab === 'Pengingat'
-                ? 'Tambah Pengingat'
-                : 'Tambah Tugas'}
+                : activeTab === 'Tugas'
+                ? 'Tambah Tugas'
+                : ''}
             </Text>
 
             <TextInput
@@ -294,9 +260,7 @@ export default function InputBar({
                   style={[styles.prioBtn, priority === p && styles.prioActive]}
                   onPress={() => setPriority(p)}
                 >
-                  <Text style={priority === p ? styles.prioTextActive : styles.prioText}>
-                    {p[0].toUpperCase() + p.slice(1)}
-                  </Text>
+                  <Text style={priority === p ? styles.prioTextActive : styles.prioText}>{p[0].toUpperCase() + p.slice(1)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -350,6 +314,7 @@ export default function InputBar({
   );
 }
 
+// --- keep your previous styles ---
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.36)' },
   modal: { backgroundColor: '#fff', marginHorizontal: 12, borderRadius: 12, padding: 14 },

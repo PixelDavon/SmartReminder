@@ -11,6 +11,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 
 const STORAGE_KEY = "smartReminder:v1";
 
+/** Simple id generator (no external libs) */
 function makeId(prefix = "") {
   return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
@@ -29,6 +30,7 @@ type GoalInput = {
   description?: string;
   target: number;
   unit?: string;
+  progress: number;
   targetDate?: string | undefined;
   priority?: "low" | "medium" | "high";
   reminderTimeISO?: string | null;
@@ -79,7 +81,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const undoRef = useRef<any>(null);
 
-  useEffect(() => { initializeNotifications().catch((e) => console.warn(e)); }, []);
+  useEffect(() => {
+    initializeNotifications().catch(console.warn);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -101,6 +105,105 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ tasks, goals, reminders })).catch(console.warn);
   }, [tasks, goals, reminders]);
 
+  /* -------------------- REMINDER HELPERS -------------------- */
+  const createOrUpdateTaskReminder = async (
+    task: Task,
+    reminderType: "none" | "daily" | "priority",
+    reminderTimeISO?: string | null
+  ) => {
+    const linked = reminders.find((r) => r.taskId === task.id);
+
+    if (reminderType === "none") {
+      if (linked) {
+        if (linked.notificationId) await cancelReminder(linked.notificationId).catch(() => {});
+        setReminders((p) => p.filter((r) => r.id !== linked.id));
+      }
+      return;
+    }
+
+    let scheduleDate: Date | null = null;
+    if (reminderTimeISO) {
+      const tmp = new Date(reminderTimeISO);
+      if (!isNaN(tmp.getTime())) scheduleDate = tmp;
+    } else if (reminderType === "daily") {
+      const now = new Date();
+      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0);
+    } else if (reminderType === "priority") {
+      const now = new Date();
+      const hour = task.priority === "high" ? 9 : task.priority === "medium" ? 13 : 18;
+      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
+      if (scheduleDate.getTime() <= Date.now()) scheduleDate.setDate(scheduleDate.getDate() + 1);
+    }
+
+    if (!scheduleDate) return;
+
+    const notifId = await scheduleReminder(task.title, task.description ?? "", scheduleDate, reminderType === "daily").catch(() => null);
+
+    const newReminder: Reminder = {
+      id: linked?.id ?? makeId("r_"),
+      title: task.title,
+      message: task.description,
+      dateTimeISO: scheduleDate.toISOString(),
+      repeat: reminderType === "daily" ? "daily" : "none",
+      repeatIntervalDays: null,
+      taskId: task.id,
+      goalId: null,
+      interacted: linked?.interacted ?? false,
+      notificationId: notifId ?? null,
+      priority: task.priority,
+      note: linked?.note ?? null,
+    };
+
+    setReminders((p) => (linked ? p.map((r) => (r.id === linked.id ? newReminder : r)) : [...p, newReminder]));
+  };
+
+  const createOrUpdateGoalReminder = async (
+    goal: Goal,
+    reminderType: "none" | "daily" | "priority",
+    reminderTimeISO?: string | null
+  ) => {
+    const linked = reminders.find((r) => r.goalId === goal.id);
+    if (reminderType === "none") {
+      if (linked) {
+        if (linked.notificationId) await cancelReminder(linked.notificationId).catch(() => {});
+        setReminders((p) => p.filter((r) => r.id !== linked.id));
+      }
+      return;
+    }
+
+    let scheduleDate: Date | null = null;
+    if (reminderTimeISO) {
+      const tmp = new Date(reminderTimeISO);
+      if (!isNaN(tmp.getTime())) scheduleDate = tmp;
+    } else if (reminderType === "priority") {
+      const now = new Date();
+      const hour = goal.priority === "high" ? 9 : goal.priority === "medium" ? 13 : 18;
+      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
+      if (scheduleDate.getTime() <= Date.now()) scheduleDate.setDate(scheduleDate.getDate() + 1);
+    }
+
+    if (!scheduleDate) return;
+
+    const notifId = await scheduleReminder(goal.title, goal.description ?? "", scheduleDate, false).catch(() => null);
+
+    const newReminder: Reminder = {
+      id: linked?.id ?? makeId("r_"),
+      title: goal.title,
+      message: goal.description,
+      dateTimeISO: scheduleDate.toISOString(),
+      repeat: "none",
+      repeatIntervalDays: null,
+      taskId: null,
+      goalId: goal.id,
+      interacted: linked?.interacted ?? false,
+      notificationId: notifId ?? null,
+      priority: goal.priority,
+      note: linked?.note ?? null,
+    };
+
+    setReminders((p) => (linked ? p.map((r) => (r.id === linked.id ? newReminder : r)) : [...p, newReminder]));
+  };
+
   /* -------------------- TASKS -------------------- */
   const addTask = async (input: TaskInput): Promise<Task> => {
     const id = makeId("t_");
@@ -116,78 +219,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: now,
     };
     setTasks((p) => [...p, task]);
-
-    if (input.reminderType && input.reminderType !== "none") {
-      await createOrUpdateTaskReminder(task, input.reminderType, input.reminderTimeISO);
-    }
-
+    await createOrUpdateTaskReminder(task, input.reminderType ?? "none", input.reminderTimeISO);
     return task;
   };
 
-  const editTask = async (task: Task) => {
+  const editTask = async (task: Task, reminderType?: "none" | "daily" | "priority", reminderTimeISO?: string | null) => {
     setTasks((p) => p.map((t) => (t.id === task.id ? task : t)));
-
-    // Update linked reminders
-    const linkedRems = reminders.filter((r) => r.taskId === task.id);
-    if (linkedRems.length > 0 || task.reminderTimeISO) {
-      const remType: "none" | "daily" | "priority" = task.reminderTimeISO ? "none" : "priority";
-      await createOrUpdateTaskReminder(task, remType, task.reminderTimeISO);
-    }
-  };
-
-  const createOrUpdateTaskReminder = async (task: Task, type: "none" | "daily" | "priority", specificTime?: string | null) => {
-    const existing = reminders.filter((r) => r.taskId === task.id);
-
-    let scheduleDate: Date | null = null;
-    const now = new Date();
-
-    if (specificTime) {
-      const tmp = new Date(specificTime);
-      if (!isNaN(tmp.getTime())) scheduleDate = tmp;
-    } else if (type === "daily") {
-      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0);
-    } else if (type === "priority") {
-      const hour = task.priority === "high" ? 9 : task.priority === "medium" ? 13 : 18;
-      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
-      if (scheduleDate.getTime() <= Date.now()) scheduleDate.setDate(scheduleDate.getDate() + 1);
-    }
-
-    if (scheduleDate) {
-      for (const r of existing) {
-        if (r.notificationId) {
-          await cancelReminder(r.notificationId).catch(() => {});
-        }
-      }
-
-      const notifId = await scheduleReminder(task.title, task.description ?? "", scheduleDate, type === "daily").catch(() => null);
-
-      const rem: Reminder = {
-        id: existing[0]?.id ?? makeId("r_"),
-        title: task.title,
-        message: task.description,
-        dateTimeISO: scheduleDate.toISOString(),
-        repeat: type === "daily" ? "daily" : "none",
-        repeatIntervalDays: null,
-        taskId: task.id,
-        goalId: null,
-        interacted: existing[0]?.interacted ?? false,
-        notificationId: notifId ?? null,
-        priority: task.priority,
-        note: existing[0]?.note ?? null,
-      };
-
-      setReminders((p) => [...p.filter((r) => r.taskId !== task.id), rem]);
-    }
+    await createOrUpdateTaskReminder(task, reminderType ?? "none", reminderTimeISO);
   };
 
   const removeTask = async (id: string) => {
     const linked = reminders.filter((r) => r.taskId === id);
     undoRef.current = { action: "delete", payload: { tasks: tasks.filter((t) => t.id === id), reminders: linked } };
-
-    for (const r of linked) {
-      if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
-    }
-
+    for (const r of linked) if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
     setReminders((p) => p.filter((r) => r.taskId !== id));
     setTasks((p) => p.filter((t) => t.id !== id));
   };
@@ -212,59 +256,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: now,
     };
     setGoals((p) => [...p, goal]);
-
-    if (input.reminderTimeISO || input.reminderType) {
-      await createOrUpdateGoalReminder(goal, input.reminderTimeISO ?? null);
+    if (input.reminderType && input.reminderType !== "none") {
+      await createOrUpdateGoalReminder(goal, input.reminderType, input.reminderTimeISO);
     }
-
     return goal;
   };
 
-  const editGoal = async (goal: Goal) => {
+  const editGoal = async (goal: Goal, reminderType?: "none" | "daily" | "priority", reminderTimeISO?: string | null) => {
     setGoals((p) => p.map((g) => (g.id === goal.id ? goal : g)));
-    await createOrUpdateGoalReminder(goal, goal.reminderTimeISO ?? null);
-  };
-
-  const createOrUpdateGoalReminder = async (goal: Goal, specificTime?: string | null) => {
-    const existing = reminders.filter((r) => r.goalId === goal.id);
-
-    if (!specificTime && existing.length === 0) return;
-
-    let scheduleDate: Date | null = specificTime ? new Date(specificTime) : null;
-    if (scheduleDate && isNaN(scheduleDate.getTime())) scheduleDate = null;
-
-    if (scheduleDate) {
-      for (const r of existing) {
-        if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
-      }
-
-      const notifId = await scheduleReminder(goal.title, goal.description ?? "", scheduleDate, false).catch(() => null);
-
-      const rem: Reminder = {
-        id: existing[0]?.id ?? makeId("r_"),
-        title: goal.title,
-        message: goal.description,
-        dateTimeISO: scheduleDate.toISOString(),
-        repeat: "none",
-        repeatIntervalDays: null,
-        taskId: null,
-        goalId: goal.id,
-        interacted: existing[0]?.interacted ?? false,
-        notificationId: notifId ?? null,
-        priority: goal.priority,
-        note: existing[0]?.note ?? null,
-      };
-
-      setReminders((p) => [...p.filter((r) => r.goalId !== goal.id), rem]);
-    }
+    if (reminderType) await createOrUpdateGoalReminder(goal, reminderType, reminderTimeISO);
   };
 
   const removeGoal = async (id: string) => {
     const linked = reminders.filter((r) => r.goalId === id);
     undoRef.current = { action: "delete", payload: { goals: goals.filter((g) => g.id === id), reminders: linked } };
-
     for (const r of linked) if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
-
     setReminders((p) => p.filter((r) => r.goalId !== id));
     setGoals((p) => p.filter((g) => g.id !== id));
   };
@@ -285,14 +291,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addReminder = async (input: ReminderInput): Promise<Reminder> => {
     const id = makeId("r_");
     let notificationId: string | null = null;
-
     try {
       const d = new Date(input.dateTimeISO);
       if (!isNaN(d.getTime())) {
         notificationId = (await scheduleReminder(input.title, input.message ?? "", d, input.repeat === "daily")) ?? null;
       }
     } catch {}
-
     const rem: Reminder = {
       id,
       title: input.title,
@@ -307,7 +311,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       priority: input.priority ?? "medium",
       note: input.note ?? null,
     };
-
     setReminders((p) => [...p, rem]);
     return rem;
   };
@@ -315,14 +318,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeReminder = async (id: string) => {
     const rem = reminders.find((r) => r.id === id);
     undoRef.current = { action: "delete", payload: { reminders: reminders.filter((r) => r.id === id) } };
-
     if (rem?.notificationId) await cancelReminder(rem.notificationId).catch(() => {});
     setReminders((p) => p.filter((r) => r.id !== id));
   };
 
   /* -------------------- export/import -------------------- */
   const exportData = async () => exportDataToJSON().catch(() => null);
-
   const importData = async (json: string) => {
     const ok = await importDataFromJSON(json);
     if (ok) {
@@ -341,11 +342,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const undoLast = async () => {
     if (!undoRef.current) return;
     const { action, payload } = undoRef.current;
-
     if (action === "delete" && payload) {
       if (payload.tasks) setTasks((p) => [...p, ...payload.tasks]);
       if (payload.goals) setGoals((p) => [...p, ...payload.goals]);
-
       if (payload.reminders) {
         for (const r of payload.reminders) {
           try {
@@ -363,7 +362,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } else if (action === "progress" && payload) {
       setGoals((p) => p.map((g) => (g.id === payload.id ? { ...g, progress: payload.before } : g)));
     }
-
     undoRef.current = null;
   };
 

@@ -1,3 +1,4 @@
+import { useAppContext } from '@context/AppContext';
 import React, { createContext, ReactNode, useContext, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -15,8 +16,11 @@ export function SnackbarProvider({ children }: { children: ReactNode }) {
   const [visible, setVisible] = useState(false);
   const [onUndo, setOnUndo] = useState<(() => void) | undefined>(undefined);
 
+  // Using AppContext is optional, but could be used to trigger re-renders if needed
+  const { undoLast } = useAppContext();
+
   const showUndo = (undoFn?: () => void) => {
-    setOnUndo(() => undoFn);
+    setOnUndo(() => undoFn ?? undoLast); // default to AppContext undoLast if no callback
     setVisible(true);
     setTimeout(() => setVisible(false), 5000);
   };
