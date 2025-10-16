@@ -37,24 +37,15 @@ export function buildISOFromDateAndTime(dateStr?: string, timeStr?: string) {
 }
 
 /** Extract date (YYYY-MM-DD) from ISO-like string */
-export function extractDate(iso?: string | null): string | undefined {
-  if (!iso) return undefined;
-  try {
-    // Handles both full ISO and local "YYYY-MM-DDTHH:mm:ss"
-    return iso.slice(0, 10);
-  } catch {
-    return undefined;
-  }
+export function extractDate(iso?: string) {
+  if (!iso) return '';
+  const match = iso.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : '';
 }
 
 /** Extract time (HH:MM) from ISO-like string */
-export function extractTime(iso?: string | null): string | undefined {
-  if (!iso) return undefined;
-  try {
-    // Works for "YYYY-MM-DDTHH:MM" or "YYYY-MM-DDTHH:MM:SS"
-    if (iso.includes('T')) return iso.slice(11, 16);
-    return undefined;
-  } catch {
-    return undefined;
-  }
+export function extractTime(iso?: string) {
+  if (!iso) return '';
+  const match = iso.match(/T(\d{2}:\d{2})/);
+  return match ? match[1] : '';
 }

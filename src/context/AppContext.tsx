@@ -140,7 +140,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let scheduleDate: Date | null = null;
     if (reminderTimeISO) {
       const tmp = new Date(reminderTimeISO);
-      if (!isNaN(tmp.getTime())) scheduleDate = tmp;
+      if (!isNaN(tmp.getTime())) {
+        // if stored timestamp is in the past, bump it to the next day (keeps user-chosen HH:MM)
+        if (tmp.getTime() <= Date.now()) {
+          // For explicit stored times, prefer next-day same time (safer than firing immediately)
+          tmp.setDate(tmp.getDate() + 1);
+        }
+        scheduleDate = tmp;
+      }
     } else if (reminderType === "daily") {
       const now = new Date();
       scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0);
@@ -190,7 +197,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let scheduleDate: Date | null = null;
     if (reminderTimeISO) {
       const tmp = new Date(reminderTimeISO);
-      if (!isNaN(tmp.getTime())) scheduleDate = tmp;
+      if (!isNaN(tmp.getTime())) {
+        // if stored timestamp is in the past, bump it to the next day (keeps user-chosen HH:MM)
+        if (tmp.getTime() <= Date.now()) {
+          // For explicit stored times, prefer next-day same time (safer than firing immediately)
+          tmp.setDate(tmp.getDate() + 1);
+        }
+        scheduleDate = tmp;
+      }
     } else if (reminderType === "priority") {
       const now = new Date();
       const hour = goal.priority === "high" ? 9 : goal.priority === "medium" ? 13 : 18;

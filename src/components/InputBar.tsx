@@ -8,12 +8,13 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerRow from './DateTimePickerRow';
@@ -36,8 +37,10 @@ export default function InputBar({
   // Prefill fields if editing
   const [title, setTitle] = useState(editItem?.title ?? '');
   const [description, setDescription] = useState(editItem?.description ?? '');
-  
+
+  const isoForTime = editItem?.reminderTimeISO ?? editItem?.dateTimeISO ?? undefined;
   const isoSrc = editItem?.dueDate || editItem?.targetDate || editItem?.dateTimeISO || '';
+
   const [date, setDate] = useState(isoSrc ? extractDate(isoSrc) || '' : '');
   const [time, setTime] = useState(isoSrc ? extractTime(isoSrc) || '' : '');
   const [target, setTarget] = useState(editItem?.target ? String(editItem.target) : '1');
@@ -57,18 +60,15 @@ export default function InputBar({
 
   useEffect(() => {
     if (editItem) {
+      const iso = editItem.reminderTimeISO ?? editItem.dateTimeISO ?? undefined;
+      const datePrefill = editItem.dueDate ?? editItem.targetDate ?? (iso ? extractDate(iso) : '');
+      const timePrefill = iso ? extractTime(iso) : '';
       //console.log('[DEBUG] InputBar editItem changed:', editItem);
       setTitle(editItem.title ?? '');
       setDescription(editItem.description ?? '');
-      setDate(
-        editItem.dueDate || editItem.targetDate || editItem.dateTimeISO
-          ? (editItem.dueDate || editItem.targetDate || editItem.dateTimeISO || '').slice(0, 10)
-          : ''
-      );
       
-      const iso = editItem.dueDate || editItem.targetDate || editItem.dateTimeISO;
-      setDate(iso ? extractDate(iso) || '' : '');
-      setTime(iso ? extractTime(iso) || '' : '');
+      setDate(datePrefill ?? '');
+      setTime(timePrefill ?? '');
       setReminderType(editItem.reminderType ?? "none")
       setTarget(editItem.target ? String(editItem.target) : '1');
       setUnit(editItem.unit ?? '');
@@ -92,9 +92,11 @@ export default function InputBar({
   // validation for date/time — already works well
   useEffect(() => {
     if (!date) return;
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const selectedDate = new Date(`${date}T00:00:00`);
+
     if (selectedDate.getTime() < todayStart.getTime()) {
       Alert.alert('Tanggal tidak valid', 'Tanggal tidak boleh sebelum hari ini.');
       setDate('');
@@ -103,6 +105,7 @@ export default function InputBar({
     }
 
     if (time) {
+      if (!editItem && time === '00:00') return;
       const [hh, mm] = time.split(':');
       const combined = new Date(
         selectedDate.getFullYear(),
@@ -117,7 +120,7 @@ export default function InputBar({
         setTime('');
       }
     }
-  }, [date]);
+  }, [date, time]);
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -131,30 +134,32 @@ export default function InputBar({
       const selectedDateStart = new Date(`${date}T00:00:00`);
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
+
       if (selectedDateStart.getTime() < todayStart.getTime()) {
         Alert.alert('Tanggal tidak valid', 'Tanggal tidak boleh sebelum hari ini.');
         return;
       }
-      if (time) {
-        const [hh, mm] = time.split(':');
-        const combined = new Date(
-          selectedDateStart.getFullYear(),
-          selectedDateStart.getMonth(),
-          selectedDateStart.getDate(),
-          Number(hh),
-          Number(mm),
-          0
-        );
-        if (combined.getTime() < Date.now()) {
-          Alert.alert('Waktu tidak valid', 'Waktu sudah lewat untuk tanggal yang dipilih.');
-          return;
-        }
+
+      // 🧠 FIX: also check when no time is given (defaults to midnight)
+      const hhmm = time || '00:00';
+      const [hh, mm] = hhmm.split(':');
+      const combined = new Date(
+        selectedDateStart.getFullYear(),
+        selectedDateStart.getMonth(),
+        selectedDateStart.getDate(),
+        Number(hh),
+        Number(mm),
+        0
+      );
+      if (combined.getTime() < Date.now()) {
+        Alert.alert('Waktu tidak valid', 'Waktu sudah lewat untuk tanggal yang dipilih.');
+        return;
       }
     } else if (reminderType !== 'none' && activeTab === 'Pengingat') {
       Alert.alert('Validation', 'Masukkan tanggal & waktu pengingat.');
       return;
     }
-
+    //console.log('[DEBUG] Saving with ISO:', iso);
     try {
       // Treat "Home" as "Tugas"
       const tab = activeTab === 'Home' ? 'Tugas' : activeTab;
@@ -231,121 +236,131 @@ export default function InputBar({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={[styles.overlay, { paddingBottom: Math.max(16, insets.bottom + 8) }]}
-        >
-          <View style={styles.modal}>
-            <Text style={styles.heading}>
-              {editItem
-                ? activeTab === 'Tujuan'
-                  ? 'Edit Tujuan'
-                  : activeTab === 'Tugas' || activeTab === 'Home'
-                  ? 'Edit Tugas'
-                  : 'Edit Pengingat'
-                : activeTab === 'Home'
-                ? 'Tambah Tugas'
-                : activeTab === 'Tujuan'
-                ? 'Tambah Tujuan'
-                : activeTab === 'Pengingat'
-                ? 'Tambah Pengingat'
-                : 'Tambah Tugas'}
-            </Text>
-
-            <TextInput
-              placeholder="Judul"
-              value={title}
-              onChangeText={setTitle}
-              placeholderTextColor="#6b7280"
-              style={styles.input}
-            />
-            <TextInput
-              placeholder="Deskripsi (opsional)"
-              value={description}
-              onChangeText={setDescription}
-              placeholderTextColor="#6b7280"
-              style={[styles.input, { height: 80 }]}
-              multiline
-            />
-
-            <DateTimePickerRow date={date} time={time} onDateChange={setDate} onTimeChange={setTime} />
-
-            <View style={styles.row}>
-              <Text style={styles.label}>Reminder:</Text>
-              {['none', 'daily', 'priority'].map((r) => (
-                <TouchableOpacity
-                  key={r}
-                  style={[styles.remBtn, reminderType === r && styles.remActive]}
-                  onPress={() => setReminderType(r as any)}
-                >
-                  <Text style={reminderType === r ? styles.remTextActive : styles.remText}>
-                    {r[0].toUpperCase() + r.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.row}>
-              <Text style={styles.label}>Prioritas:</Text>
-              {(['low', 'medium', 'high'] as Priority[]).map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[styles.prioBtn, priority === p && styles.prioActive]}
-                  onPress={() => setPriority(p)}
-                >
-                  <Text style={priority === p ? styles.prioTextActive : styles.prioText}>
-                    {p[0].toUpperCase() + p.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {activeTab === 'Tujuan' && (
-              <>
-                <TextInput
-                  placeholder="Target (angka)"
-                  value={target}
-                  onChangeText={setTarget}
-                  placeholderTextColor="#6b7280"
-                  style={styles.input}
-                  keyboardType="numeric"
-                />
-                <TextInput
-                  placeholder="Satuan (contoh: tugas)"
-                  value={unit}
-                  onChangeText={setUnit}
-                  placeholderTextColor="#6b7280"
-                  style={styles.input}
-                />
-                <TextInput
-                  placeholder="Progress saat ini"
-                  value={progress}
-                  onChangeText={setProgress}
-                  placeholderTextColor="#6b7280"
-                  style={styles.input}
-                  keyboardType="numeric"
-                />
-              </>
-            )}
-
-            <View style={styles.buttonsRow}>
-              <TouchableOpacity
-                style={[styles.btn, styles.cancelBtn]}
-                onPress={() => {
-                  clearAll();
-                  onClose();
-                }}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={[styles.overlay]}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={[styles.overlay, { justifyContent: 'flex-end' }]}>
+            <View style={[styles.modal, { paddingBottom: Math.max(16, insets.bottom + 8), maxHeight: '90%' }]}>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 24 }}
               >
-                <Text style={styles.cancelText}>Batal</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSave}>
-                <Text style={styles.saveText}>{editItem ? 'Simpan Perubahan' : 'Simpan'}</Text>
-              </TouchableOpacity>
+                <Text style={styles.heading}>
+                  {editItem
+                    ? activeTab === 'Tujuan'
+                      ? 'Edit Tujuan'
+                      : activeTab === 'Tugas' || activeTab === 'Home'
+                      ? 'Edit Tugas'
+                      : 'Edit Pengingat'
+                    : activeTab === 'Home'
+                    ? 'Tambah Tugas'
+                    : activeTab === 'Tujuan'
+                    ? 'Tambah Tujuan'
+                    : activeTab === 'Pengingat'
+                    ? 'Tambah Pengingat'
+                    : 'Tambah Tugas'}
+                </Text>
+
+                <TextInput
+                  placeholder="Judul"
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholderTextColor="#6b7280"
+                  style={styles.input}
+                />
+                <TextInput
+                  placeholder="Deskripsi (opsional)"
+                  value={description}
+                  onChangeText={setDescription}
+                  placeholderTextColor="#6b7280"
+                  style={[styles.input, { height: 80 }]}
+                  multiline
+                />
+
+                <DateTimePickerRow date={date} time={time} onDateChange={setDate} onTimeChange={setTime} />
+
+                <View style={styles.row}>
+                  <Text style={styles.label}>Reminder:</Text>
+                  {['none', 'daily', 'priority'].map((r) => (
+                    <TouchableOpacity
+                      key={r}
+                      style={[styles.remBtn, reminderType === r && styles.remActive]}
+                      onPress={() => setReminderType(r as any)}
+                    >
+                      <Text style={reminderType === r ? styles.remTextActive : styles.remText}>
+                        {r[0].toUpperCase() + r.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <View style={styles.row}>
+                  <Text style={styles.label}>Prioritas:</Text>
+                  {(['low', 'medium', 'high'] as Priority[]).map((p) => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.prioBtn, priority === p && styles.prioActive]}
+                      onPress={() => setPriority(p)}
+                    >
+                      <Text style={priority === p ? styles.prioTextActive : styles.prioText}>
+                        {p[0].toUpperCase() + p.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {activeTab === 'Tujuan' && (
+                  <>
+                    <View style={styles.targetRow}>
+                      <TextInput
+                        placeholder="Target"
+                        value={target}
+                        onChangeText={setTarget}
+                        placeholderTextColor="#6b7280"
+                        style={[styles.input, styles.targetInput]}
+                        keyboardType="numeric"
+                      />
+                      <TextInput
+                        placeholder="Satuan"
+                        value={unit}
+                        onChangeText={setUnit}
+                        placeholderTextColor="#6b7280"
+                        style={[styles.input, styles.unitInput]}
+                      />
+                    </View>
+                    <TextInput
+                      placeholder="Progress saat ini"
+                      value={progress}
+                      onChangeText={setProgress}
+                      placeholderTextColor="#6b7280"
+                      style={styles.input}
+                      keyboardType="numeric"
+                    />
+                  </>
+                )}
+
+                <View style={styles.buttonsRow}>
+                  <TouchableOpacity
+                    style={[styles.btn, styles.cancelBtn]}
+                    onPress={() => {
+                      clearAll();
+                      onClose();
+                    }}
+                  >
+                    <Text style={styles.cancelText}>Batal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.btn, styles.saveBtn]} onPress={handleSave}>
+                    <Text style={styles.saveText}>{editItem ? 'Simpan Perubahan' : 'Simpan'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>  
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </TouchableWithoutFeedback>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -371,4 +386,17 @@ const styles = StyleSheet.create({
   cancelText: { color: '#374151' },
   saveBtn: { backgroundColor: '#16a34a' },
   saveText: { color: '#fff', fontWeight: '700' },
+  targetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  targetInput: {
+    flex: 1,
+    marginRight: 8,
+  },
+  unitInput: {
+    flex: 1,
+  },
+
 });

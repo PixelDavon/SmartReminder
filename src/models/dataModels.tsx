@@ -8,7 +8,7 @@ export type Task = {
   dueDate?: string | undefined;
   reminderTimeISO: string | null;
   reminderType?: 'none' | 'daily' | 'priority';
-  priority?: Priority;
+  priority: Priority;
   completed: boolean;
   createdAt: string;
 };
@@ -23,7 +23,7 @@ export type Goal = {
   targetDate?: string | undefined;
   reminderTimeISO: string | null;
   reminderType?: 'none' | 'daily' | 'priority';
-  priority?: Priority;
+  priority: Priority;
   createdAt: string;
 };
 

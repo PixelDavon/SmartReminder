@@ -1,19 +1,35 @@
 // app/(tabs)/tujuan.tsx
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSnackbar } from '@/src/context/SnackbarContext';
+import { Goal } from '@/src/models/dataModels';
 import ProgressBar from '@components/ProgressBar';
 import { useAppContext } from '@context/AppContext';
 import { formatDisplayDate } from '@utils/dateHelpers';
 import { useEditModal } from './_layout';
+
+const getPriorityStyle = (priority?: string) => {
+  switch (priority) {
+    case 'high': return styles.priorityHigh;
+    case 'medium': return styles.priorityMedium;
+    case 'low': return styles.priorityLow;
+    default: return {};
+  }
+};
 
 export default function Tujuan() {
   const { goals, updateGoalProgress, removeGoal, undoLast } = useAppContext();
   const insets = useSafeAreaInsets();
   const snackbar = useSnackbar();
   const editModal = useEditModal();
+
+  const [sortMode, setSortMode] = useState<'progress' | 'priority'>('priority');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSortMode = () => setSortMode((m) => (m === 'priority' ? 'progress' : 'priority'));
+  const toggleSortOrder = () => setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
 
   const confirmDelete = (id: string) => {
     Alert.alert('Hapus tujuan', 'Yakin ingin menghapus tujuan ini?', [
@@ -29,7 +45,24 @@ export default function Tujuan() {
     ]);
   };
 
-  const renderItem = ({ item }: { item: any }) => {
+  const sortGoals = (arr: Goal[]) => {
+    return arr.slice().sort((a, b) => {
+      if (sortMode === 'priority') {
+        const order: Record<string, number> = { high: 3, medium: 2, low: 1 };
+        const pa = order[a.priority ?? 'low'];
+        const pb = order[b.priority ?? 'low'];
+        return sortOrder === 'desc' ? pb - pa : pa - pb;
+      } else {
+        const pa = a.target > 0 ? a.progress / a.target : 0;
+        const pb = b.target > 0 ? b.progress / b.target : 0;
+        return sortOrder === 'desc' ? pb - pa : pa - pb;
+      }
+    });
+  };
+
+  const sortedGoals = sortGoals(goals);
+
+  const renderItem = ({ item }: { item: Goal }) => {
     const pct = item.target > 0 ? Math.round((item.progress / item.target) * 100) : 0;
     const isDone = pct >= 100;
 
@@ -37,6 +70,9 @@ export default function Tujuan() {
       <View style={styles.card}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{item.title}</Text>
+          <Text style={[styles.priority, getPriorityStyle(item.priority)]}>
+            {item.priority || 'Normal'}
+          </Text>
           {item.description ? <Text style={styles.desc}>{item.description}</Text> : null}
 
           <View style={{ marginTop: 8 }}>
@@ -47,7 +83,9 @@ export default function Tujuan() {
             {item.progress}/{item.target} {item.unit ?? ''} • {pct}%
           </Text>
 
-          {item.targetDate ? <Text style={styles.meta}>Target: {formatDisplayDate(item.targetDate)}</Text> : null}
+          {item.targetDate ? (
+            <Text style={styles.meta}>Target: {formatDisplayDate(item.targetDate)}</Text>
+          ) : null}
           {isDone && <Text style={styles.done}>🎯 Tujuan tercapai!</Text>}
         </View>
 
@@ -76,6 +114,7 @@ export default function Tujuan() {
           >
             <Text style={styles.del}>🗑️</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => editModal?.openEditModal('Tujuan', item)}
             style={styles.actionBtn}
@@ -90,8 +129,21 @@ export default function Tujuan() {
 
   return (
     <View style={[styles.container, { paddingBottom: Math.max(16, insets.bottom + 16) }]}>
+      {/* Header Controls */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={toggleSortMode} style={styles.headerBtn}>
+          <Text style={styles.headerText}>
+            Urut: {sortMode === 'priority' ? 'Prioritas' : 'Progress'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={toggleSortOrder} style={styles.headerBtn}>
+          <Text style={styles.headerText}>Arah: {sortOrder === 'desc' ? '↓' : '↑'}</Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
-        data={goals.slice().sort((a, b) => (b.progress / Math.max(1, b.target)) - (a.progress / Math.max(1, a.target)))}
+        data={sortedGoals}
         keyExtractor={(i) => i.id}
         renderItem={renderItem}
         ListEmptyComponent={<Text style={styles.empty}>Belum ada tujuan.</Text>}
@@ -103,22 +155,26 @@ export default function Tujuan() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 12, backgroundColor: 'transparent' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  headerBtn: { padding: 8, backgroundColor: '#f3f4f6', borderRadius: 8 },
+  headerText: { fontWeight: '600', color: '#333' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  empty: { textAlign: 'center', color: '#666', fontSize: 16 },
+  empty: { textAlign: 'center', color: '#666', fontSize: 14, marginVertical: 8 },
   card: {
     backgroundColor: '#fff',
     padding: 14,
     borderRadius: 10,
     marginBottom: 10,
     flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 4,
-    elevation: 2,
   },
-  title: { fontWeight: '700', fontSize: 16, color: '#111' },
+  title: { fontWeight: '600', fontSize: 16, color: '#111' },
   desc: { color: '#555', marginTop: 6, fontSize: 14 },
-  meta: { color: '#777', marginTop: 8, fontSize: 12 },
+  meta: { color: '#777', marginTop: 6, fontSize: 12 },
   done: { marginTop: 6, color: '#16a34a', fontWeight: '600', fontSize: 13 },
   actions: { marginLeft: 8, justifyContent: 'center', alignItems: 'center', flexDirection: 'row' },
   actionBtn: { padding: 8 },
@@ -126,4 +182,8 @@ const styles = StyleSheet.create({
   minus: { fontSize: 22, color: '#888' },
   del: { fontSize: 18, color: '#c23030' },
   edit: { fontSize: 18, color: '#007bff' },
+  priority: { fontWeight: '600', fontSize: 12, marginTop: 6 },
+  priorityHigh: { color: '#dc2626' },
+  priorityMedium: { color: '#f59e0b' },
+  priorityLow: { color: '#16a34a' },
 });
