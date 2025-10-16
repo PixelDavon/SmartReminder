@@ -46,9 +46,18 @@ export async function scheduleReminder(title: string, body: string, date: Date, 
 
     let trigger: any;
     if (repeatDaily) {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(date.getHours(), date.getMinutes(), 0, 0);
+
+      if (next.getTime() <= now.getTime()) {
+        // if today's time has passed, start tomorrow
+        next.setDate(next.getDate() + 1);
+      }
+
       trigger = {
-        hour: date.getHours(),
-        minute: date.getMinutes(),
+        hour: next.getHours(),
+        minute: next.getMinutes(),
         repeats: true,
       };
     } else {

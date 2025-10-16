@@ -5,11 +5,12 @@ export type Task = {
   id: string;
   title: string;
   description?: string;
-  dueDate?: string | undefined; // YYYY-MM-DD (date only) or ISO string
-  reminderTimeISO?: string | null; // ISO string for reminder or null
+  dueDate?: string | undefined;
+  reminderTimeISO: string | null;
+  reminderType?: 'none' | 'daily' | 'priority';
   priority?: Priority;
   completed: boolean;
-  createdAt: string; // ISO
+  createdAt: string;
 };
 
 export type Goal = {
@@ -20,8 +21,9 @@ export type Goal = {
   target: number;
   unit?: string;
   targetDate?: string | undefined;
+  reminderTimeISO: string | null;
+  reminderType?: 'none' | 'daily' | 'priority';
   priority?: Priority;
-  reminderTimeISO?: string | null;
   createdAt: string;
 };
 
@@ -30,7 +32,7 @@ export type Reminder = {
   title: string;
   message?: string;
   dateTimeISO: string; // ISO string
-  repeat?: 'none' | 'daily' | 'priority';
+  repeat: 'none' | 'daily' | 'priority';
   repeatIntervalDays?: number | null;
   taskId?: string | null;
   goalId?: string | null;

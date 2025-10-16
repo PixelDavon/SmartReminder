@@ -1,6 +1,6 @@
 import { useAppContext } from '@/src/context/AppContext';
 import { Priority } from '@/src/models/dataModels';
-import { buildISOFromDateAndTime } from '@/src/utils/dateHelpers';
+import { buildISOFromDateAndTime, extractDate, extractTime } from '@/src/utils/dateHelpers';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -36,16 +36,10 @@ export default function InputBar({
   // Prefill fields if editing
   const [title, setTitle] = useState(editItem?.title ?? '');
   const [description, setDescription] = useState(editItem?.description ?? '');
-  const [date, setDate] = useState(
-    editItem?.dueDate || editItem?.targetDate || editItem?.dateTimeISO
-      ? (editItem.dueDate || editItem.targetDate || editItem.dateTimeISO || '').slice(0, 10)
-      : ''
-  );
-  const [time, setTime] = useState(
-    editItem?.dueDate || editItem?.targetDate || editItem?.dateTimeISO
-      ? (editItem.dueDate || editItem.targetDate || editItem.dateTimeISO || '').slice(11, 16)
-      : ''
-  );
+  
+  const isoSrc = editItem?.dueDate || editItem?.targetDate || editItem?.dateTimeISO || '';
+  const [date, setDate] = useState(isoSrc ? extractDate(isoSrc) || '' : '');
+  const [time, setTime] = useState(isoSrc ? extractTime(isoSrc) || '' : '');
   const [target, setTarget] = useState(editItem?.target ? String(editItem.target) : '1');
   const [unit, setUnit] = useState(editItem?.unit ?? '');
   const [priority, setPriority] = useState<Priority>(editItem?.priority ?? 'medium');
@@ -53,11 +47,13 @@ export default function InputBar({
   const [progress, setProgress] = useState(editItem?.progress ? String(editItem.progress) : '0');
 
   useEffect(() => {
-    if (!visible) clearAll();
     if (visible) {
-      //console.log('[DEBUG] InputBar modal opened with activeTab:', activeTab, 'editItem:', editItem);
+      if (!editItem) clearAll(); // <== reset all fields when adding new
+    } else {
+      // optional: clear when closing too
+      setTimeout(clearAll, 300);
     }
-  }, [visible]);
+  }, [visible, editItem]);
 
   useEffect(() => {
     if (editItem) {
@@ -69,11 +65,11 @@ export default function InputBar({
           ? (editItem.dueDate || editItem.targetDate || editItem.dateTimeISO || '').slice(0, 10)
           : ''
       );
-      setTime(
-        editItem.dueDate || editItem.targetDate || editItem.dateTimeISO
-          ? (editItem.dueDate || editItem.targetDate || editItem.dateTimeISO || '').slice(11, 16)
-          : ''
-      );
+      
+      const iso = editItem.dueDate || editItem.targetDate || editItem.dateTimeISO;
+      setDate(iso ? extractDate(iso) || '' : '');
+      setTime(iso ? extractTime(iso) || '' : '');
+      setReminderType(editItem.reminderType ?? "none")
       setTarget(editItem.target ? String(editItem.target) : '1');
       setUnit(editItem.unit ?? '');
       setPriority(editItem.priority ?? 'medium');
@@ -171,7 +167,9 @@ export default function InputBar({
             description: description.trim() || undefined,
             dueDate: date || undefined,
             priority,
-          });
+            reminderType,
+            reminderTimeISO: iso ?? null
+          }, reminderType, iso);
         } else {
           await ctx.addTask({
             title: title.trim(),
@@ -180,7 +178,7 @@ export default function InputBar({
             reminderTimeISO: iso ?? null,
             priority,
             reminderType,
-          } as any);
+          });
         }
       } else if (tab === 'Tujuan') {
         if (editItem) {
@@ -192,8 +190,10 @@ export default function InputBar({
             unit: unit || undefined,
             targetDate: date || undefined,
             priority,
-            progress: Math.max(0, Number(progress)),
-          });
+            progress: Math.max(0, Number(progress) || 0),
+            reminderType,
+            reminderTimeISO: iso ?? null
+          }, reminderType, iso);
         } else {
           await ctx.addGoal({
             title: title.trim(),
@@ -202,23 +202,23 @@ export default function InputBar({
             unit: unit || undefined,
             targetDate: date || undefined,
             priority,
+            progress: Math.max(0, Number(progress) || 0),
             reminderTimeISO: iso ?? null,
             reminderType,
-          } as any);
+          });
         }
       } else if (tab === 'Pengingat') {
         if (!iso) {
           Alert.alert('Validation', 'Masukkan tanggal & waktu pengingat.');
           return;
         }
-        // Editing reminders not implemented here, but can be added similarly
         await ctx.addReminder({
           title: title.trim(),
           message: description.trim() || undefined,
           dateTimeISO: iso,
-          repeat: reminderType === 'daily' ? 'daily' : 'none',
+          repeat: reminderType, // === 'daily' ? 'daily' : 'none',
           priority,
-        } as any);
+        });
       }
     } catch (err) {
       console.warn('save failed', err);
