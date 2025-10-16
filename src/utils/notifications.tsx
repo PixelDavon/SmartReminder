@@ -1,133 +1,83 @@
-// src/utils/notifications.ts
-import * as Device from "expo-device";
-import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+// src/utils/notifications.tsx
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 
 /**
- * Initialize notification permissions and Android channel.
- * Call once from app start (e.g. AppProvider effect).
+ * Notification handler - new fields (SDK 54+)
  */
-export async function initNotifications() {
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowList: true,
+  }),
+});
+
+export async function initializeNotifications(): Promise<void> {
   try {
-    if (!Device.isDevice) {
-      console.warn("Notifications: running on simulator — some features may not work.");
-      // still continue, will request permission but many features require a real device
+    const cur = await Notifications.getPermissionsAsync();
+    if ((cur as any).granted !== true && (cur as any).status !== 'granted') {
+      await Notifications.requestPermissionsAsync();
     }
-
-    const existing = await Notifications.getPermissionsAsync();
-    let finalStatus = existing.status;
-
-    if (finalStatus !== "granted") {
-      const asked = await Notifications.requestPermissionsAsync();
-      finalStatus = asked.status;
-    }
-
-    if (finalStatus !== "granted") {
-      console.warn("Notifications permission not granted.");
-      return;
-    }
-
-    // New handler properties: show banner/list etc.
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowBanner: true,
-        shouldShowList: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
-
-    // On Android create a channel with sound/importance
-    if (Platform.OS === "android") {
-      try {
-        await Notifications.setNotificationChannelAsync("default", {
-          name: "default",
-          importance: Notifications.AndroidImportance.MAX,
-          vibrationPattern: [0, 250, 250, 250],
-          sound: "default",
-        });
-      } catch (e) {
-        // Some SDK/version combos may not support custom sound name; ignore non-fatal error
-        console.warn("Could not set Android notification channel:", e);
-      }
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'Default',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+      });
     }
   } catch (err) {
-    console.warn("initNotifications error:", err);
+    console.warn('initializeNotifications failed', err);
   }
 }
 
 /**
- * Schedule a reminder.
- * - dateTimeISO: ISO string for the time (local)
- * - repeat: 'none' | 'daily' | 'weekly'
- *
- * Returns the scheduled notification id (string) or null on failure.
+ * Schedule a one-time or repeated notification.
+ * For a single date/time trigger, we accept a Date object.
+ * Returns notificationId string or null on failure.
  */
-export async function scheduleReminder(
-  title: string,
-  body: string,
-  dateTimeISO: string,
-  repeat: "none" | "daily" | "weekly" = "none"
-): Promise<string | null> {
+export async function scheduleReminder(title: string, body: string, date: Date, repeatDaily = false): Promise<string | null> {
   try {
-    const triggerDate = new Date(dateTimeISO);
-    if (isNaN(triggerDate.getTime())) {
-      console.warn("scheduleReminder: invalid date:", dateTimeISO);
-      return null;
-    }
+    const now = Date.now();
+    const targetTs = date.getTime();
+    // if target is in past, schedule a small delay in future (1s)
+    const triggerDate = targetTs <= now ? new Date(now + 1000) : date;
 
-    // Build trigger. TypeScript defs for expo-notifications are strict, so cast to any where necessary.
-    let trigger: Notifications.NotificationTriggerInput;
-
-    if (repeat === "none") {
-      // passing a Date is acceptable at runtime; cast to NotificationTriggerInput to placate TS
-      trigger = (triggerDate as unknown) as Notifications.NotificationTriggerInput;
-    } else if (repeat === "daily") {
-      // Calendar trigger repeating every day at hour/minute
-      trigger = ({
-        hour: triggerDate.getHours(),
-        minute: triggerDate.getMinutes(),
+    let trigger: any;
+    if (repeatDaily) {
+      trigger = {
+        hour: date.getHours(),
+        minute: date.getMinutes(),
         repeats: true,
-      } as unknown) as Notifications.NotificationTriggerInput;
+      };
     } else {
-      // weekly: ask for weekday + hour/minute. Note: weekday numbering can differ by platform;
-      // we attempt a reasonable mapping: JS getDay(): 0 (Sun) .. 6 (Sat). CalendarTriggerInput weekday expects 1-7 (Sun-Sat) on iOS/Android commonly
-      const jsDay = triggerDate.getDay(); // 0..6
-      const weekday = ((jsDay + 1) % 7) + 1; // maps 0..6 -> 1..7 (best-effort)
-      trigger = ({
-        weekday,
-        hour: triggerDate.getHours(),
-        minute: triggerDate.getMinutes(),
-        repeats: true,
-      } as unknown) as Notifications.NotificationTriggerInput;
+      // Use new trigger format for SDK 54+
+      trigger = {
+        type: 'date',
+        date: triggerDate,
+      };
     }
 
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
-        // request default sound; platform behavior will use channel on Android
-        sound: "default",
-        priority: Notifications.AndroidNotificationPriority.MAX,
+        sound: true,
       },
       trigger,
     });
-
     return id ?? null;
   } catch (err) {
-    console.warn("scheduleReminder error:", err);
+    console.warn('scheduleReminder failed', err);
     return null;
   }
 }
 
-/**
- * Cancel a scheduled notification by id
- */
-export async function cancelNotification(notificationId?: string | null) {
-  if (!notificationId) return;
+export async function cancelReminder(notificationId: string) {
   try {
     await Notifications.cancelScheduledNotificationAsync(notificationId);
   } catch (err) {
-    console.warn("cancelNotification error:", err);
+    console.warn('cancelReminder failed', err);
   }
 }

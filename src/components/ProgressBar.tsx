@@ -1,6 +1,6 @@
 // src/components/ProgressBar.tsx
-import React from "react";
-import { View, StyleSheet, Text } from "react-native";
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 export default function ProgressBar({ value }: { value: number }) {
   const w = Math.max(0, Math.min(100, value));
@@ -16,7 +16,7 @@ export default function ProgressBar({ value }: { value: number }) {
 
 const styles = StyleSheet.create({
   container: { marginTop: 8 },
-  track: { height: 8, backgroundColor: "#eee", borderRadius: 6, overflow: "hidden" },
-  fill: { height: 8, backgroundColor: "#2563eb" },
-  label: { textAlign: "right", marginTop: 6, color: "#666", fontSize: 12 },
+  track: { height: 8, backgroundColor: '#eee', borderRadius: 6, overflow: 'hidden' },
+  fill: { height: 8, backgroundColor: '#2563eb' },
+  label: { textAlign: 'right', marginTop: 6, color: '#666', fontSize: 12 },
 });

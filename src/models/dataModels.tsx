@@ -1,15 +1,15 @@
-// src/models/dataModels.ts
+// src/models/dataModels.tsx
+export type Priority = 'low' | 'medium' | 'high';
+
 export type Task = {
   id: string;
   title: string;
   description?: string;
-  dueDate?: string; // YYYY-MM-DD
-  reminderTime?: string; // ISO string
-  priority?: "low" | "medium" | "high";
+  dueDate?: string | undefined; // YYYY-MM-DD (date only) or ISO string
+  reminderTimeISO?: string | null; // ISO string for reminder or null
+  priority?: Priority;
   completed: boolean;
-  category?: string;
-  optimalTime?: string; // HH:MM
-  notified?: boolean;
+  createdAt: string; // ISO
 };
 
 export type Goal = {
@@ -19,16 +19,23 @@ export type Goal = {
   progress: number;
   target: number;
   unit?: string;
-  targetDate?: string; // YYYY-MM-DD
+  targetDate?: string | undefined;
+  priority?: Priority;
+  reminderTimeISO?: string | null;
+  createdAt: string;
 };
 
 export type Reminder = {
   id: string;
   title: string;
-  dateTime: string; // ISO
-  repeat?: "none" | "daily" | "weekly";
-  taskId?: string | null;
   message?: string;
+  dateTimeISO: string; // ISO string
+  repeat?: 'none' | 'daily' | 'priority';
+  repeatIntervalDays?: number | null;
+  taskId?: string | null;
+  goalId?: string | null;
   interacted?: boolean;
   notificationId?: string | null;
+  priority?: Priority;
+  note?: string | null;
 };

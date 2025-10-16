@@ -1,335 +1,393 @@
 // src/context/AppContext.tsx
+import { Goal, Reminder, Task } from "@models/dataModels";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { exportDataToJSON, importDataFromJSON } from "@utils/dataIO";
 import {
-  cancelNotification,
-  initNotifications,
+  cancelReminder,
+  initializeNotifications,
   scheduleReminder,
 } from "@utils/notifications";
-import React, {
-  createContext,
-  ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 
-// ==============================
-// TYPES
-// ==============================
+const STORAGE_KEY = "smartReminder:v1";
 
-export type RepeatType = "none" | "daily" | "weekly";
+function makeId(prefix = "") {
+  return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
 
-export type Task = {
-  id: string;
+type TaskInput = {
   title: string;
   description?: string;
-  dueDate?: string; // ISO date (YYYY-MM-DD)
-  reminderTimeISO?: string | null; // ISO datetime for reminders
+  dueDate?: string | undefined;
+  reminderTimeISO?: string | null;
   priority?: "low" | "medium" | "high";
-  completed: boolean;
-  notified?: boolean;
+  reminderType?: "none" | "daily" | "priority";
 };
 
-export type Goal = {
-  id: string;
+type GoalInput = {
   title: string;
   description?: string;
-  progress: number;
   target: number;
-  targetDate?: string;
   unit?: string;
+  targetDate?: string | undefined;
+  priority?: "low" | "medium" | "high";
+  reminderTimeISO?: string | null;
+  reminderType?: "none" | "daily" | "priority";
 };
 
-export type Reminder = {
-  id: string;
+type ReminderInput = {
   title: string;
   message?: string;
   dateTimeISO: string;
-  repeat: RepeatType;
-  taskId?: string | null;
-  notificationId?: string | null;
-  interacted?: boolean;
+  repeat?: "none" | "daily" | "priority";
+  repeatIntervalDays?: number | null;
+  priority?: "low" | "medium" | "high";
+  linkedTaskId?: string | null;
+  linkedGoalId?: string | null;
+  note?: string | null;
 };
 
-// ==============================
-// CONTEXT TYPE
-// ==============================
-
-type AppContextType = {
+export interface AppContextValue {
   tasks: Task[];
   goals: Goal[];
   reminders: Reminder[];
 
-  addTask: (payload: Omit<Task, "id" | "completed">) => Promise<Task>;
-  removeTask: (id: string) => void;
+  addTask: (input: TaskInput) => Promise<Task>;
+  editTask: (task: Task) => Promise<void>;
+  removeTask: (id: string) => Promise<void>;
   toggleTaskCompletion: (id: string) => void;
 
-  addGoal: (payload: Omit<Goal, "id" | "progress">) => Promise<Goal>;
+  addGoal: (input: GoalInput) => Promise<Goal>;
+  editGoal: (goal: Goal) => Promise<void>;
+  removeGoal: (id: string) => Promise<void>;
   updateGoalProgress: (id: string, delta: number) => void;
-  removeGoal: (id: string) => void;
 
-  addReminder: (payload: {
-    title: string;
-    message?: string;
-    dateTimeISO: string;
-    repeat?: RepeatType;
-    taskId?: string | null;
-  }) => Promise<Reminder | null>;
+  addReminder: (input: ReminderInput) => Promise<Reminder>;
   removeReminder: (id: string) => Promise<void>;
 
-  addItem: (
-    tabName: "Tugas" | "Tujuan" | "Pengingat",
-    payload: any
-  ) => Promise<any>;
-};
+  exportData: () => Promise<string | null>;
+  importData: (json: string) => Promise<boolean>;
 
-// ==============================
-// INITIAL STATE
-// ==============================
+  undoLast: () => Promise<void>;
+}
 
-const STORAGE_KEY = "smartReminder:v1";
+const AppContext = createContext<AppContextValue>({} as AppContextValue);
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
-
-// ==============================
-// PROVIDER
-// ==============================
-
-export const AppProvider = ({ children }: { children: ReactNode }) => {
+export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [reminders, setReminders] = useState<Reminder[]>([]);
-  const [ready, setReady] = useState(false);
+  const undoRef = useRef<any>(null);
 
-  // Load persisted data
+  useEffect(() => { initializeNotifications().catch((e) => console.warn(e)); }, []);
+
   useEffect(() => {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          setTasks(parsed.tasks || []);
-          setGoals(parsed.goals || []);
-          setReminders(parsed.reminders || []);
+          setTasks(parsed.tasks ?? []);
+          setGoals(parsed.goals ?? []);
+          setReminders(parsed.reminders ?? []);
         }
       } catch (err) {
-        console.warn("AppProvider: failed to load storage", err);
-      } finally {
-        setReady(true);
+        console.warn("Failed to load storage", err);
       }
     })();
   }, []);
 
-  // Save on change
   useEffect(() => {
-    if (!ready) return;
-    (async () => {
-      try {
-        const data = { tasks, goals, reminders };
-        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      } catch (err) {
-        console.warn("AppProvider: failed to save storage", err);
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ tasks, goals, reminders })).catch(console.warn);
+  }, [tasks, goals, reminders]);
+
+  /* -------------------- TASKS -------------------- */
+  const addTask = async (input: TaskInput): Promise<Task> => {
+    const id = makeId("t_");
+    const now = new Date().toISOString();
+    const task: Task = {
+      id,
+      title: input.title,
+      description: input.description,
+      dueDate: input.dueDate ?? undefined,
+      reminderTimeISO: input.reminderTimeISO ?? null,
+      priority: input.priority ?? "medium",
+      completed: false,
+      createdAt: now,
+    };
+    setTasks((p) => [...p, task]);
+
+    if (input.reminderType && input.reminderType !== "none") {
+      await createOrUpdateTaskReminder(task, input.reminderType, input.reminderTimeISO);
+    }
+
+    return task;
+  };
+
+  const editTask = async (task: Task) => {
+    setTasks((p) => p.map((t) => (t.id === task.id ? task : t)));
+
+    // Update linked reminders
+    const linkedRems = reminders.filter((r) => r.taskId === task.id);
+    if (linkedRems.length > 0 || task.reminderTimeISO) {
+      const remType: "none" | "daily" | "priority" = task.reminderTimeISO ? "none" : "priority";
+      await createOrUpdateTaskReminder(task, remType, task.reminderTimeISO);
+    }
+  };
+
+  const createOrUpdateTaskReminder = async (task: Task, type: "none" | "daily" | "priority", specificTime?: string | null) => {
+    const existing = reminders.filter((r) => r.taskId === task.id);
+
+    let scheduleDate: Date | null = null;
+    const now = new Date();
+
+    if (specificTime) {
+      const tmp = new Date(specificTime);
+      if (!isNaN(tmp.getTime())) scheduleDate = tmp;
+    } else if (type === "daily") {
+      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0);
+    } else if (type === "priority") {
+      const hour = task.priority === "high" ? 9 : task.priority === "medium" ? 13 : 18;
+      scheduleDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, 0, 0);
+      if (scheduleDate.getTime() <= Date.now()) scheduleDate.setDate(scheduleDate.getDate() + 1);
+    }
+
+    if (scheduleDate) {
+      for (const r of existing) {
+        if (r.notificationId) {
+          await cancelReminder(r.notificationId).catch(() => {});
+        }
       }
-    })();
-  }, [tasks, goals, reminders, ready]);
 
-  // Initialize notifications
-  useEffect(() => {
-    initNotifications();
-  }, []);
+      const notifId = await scheduleReminder(task.title, task.description ?? "", scheduleDate, type === "daily").catch(() => null);
 
-  // ==============================
-  // TASK FUNCTIONS
-  // ==============================
-
-  const addTask = useCallback(
-    async (payload: Omit<Task, "id" | "completed">) => {
-      const id = Date.now().toString();
-      const task: Task = {
-        id,
-        title: payload.title,
-        description: payload.description,
-        dueDate: payload.dueDate,
-        reminderTimeISO: payload.reminderTimeISO ?? null,
-        priority: payload.priority ?? "medium",
-        completed: false,
-        notified: false,
+      const rem: Reminder = {
+        id: existing[0]?.id ?? makeId("r_"),
+        title: task.title,
+        message: task.description,
+        dateTimeISO: scheduleDate.toISOString(),
+        repeat: type === "daily" ? "daily" : "none",
+        repeatIntervalDays: null,
+        taskId: task.id,
+        goalId: null,
+        interacted: existing[0]?.interacted ?? false,
+        notificationId: notifId ?? null,
+        priority: task.priority,
+        note: existing[0]?.note ?? null,
       };
-      setTasks((prev) => [task, ...prev]);
 
-      // Schedule reminder if available
-      if (task.reminderTimeISO) {
-        await addReminder({
-          title: `Pengingat: ${task.title}`,
-          message: task.description,
-          dateTimeISO: task.reminderTimeISO,
-          repeat: "none",
-          taskId: task.id,
-        });
+      setReminders((p) => [...p.filter((r) => r.taskId !== task.id), rem]);
+    }
+  };
+
+  const removeTask = async (id: string) => {
+    const linked = reminders.filter((r) => r.taskId === id);
+    undoRef.current = { action: "delete", payload: { tasks: tasks.filter((t) => t.id === id), reminders: linked } };
+
+    for (const r of linked) {
+      if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
+    }
+
+    setReminders((p) => p.filter((r) => r.taskId !== id));
+    setTasks((p) => p.filter((t) => t.id !== id));
+  };
+
+  const toggleTaskCompletion = (id: string) =>
+    setTasks((p) => p.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
+
+  /* -------------------- GOALS -------------------- */
+  const addGoal = async (input: GoalInput): Promise<Goal> => {
+    const id = makeId("g_");
+    const now = new Date().toISOString();
+    const goal: Goal = {
+      id,
+      title: input.title,
+      description: input.description,
+      progress: 0,
+      target: Math.max(1, input.target),
+      unit: input.unit,
+      targetDate: input.targetDate ?? undefined,
+      priority: input.priority ?? "medium",
+      reminderTimeISO: input.reminderTimeISO ?? null,
+      createdAt: now,
+    };
+    setGoals((p) => [...p, goal]);
+
+    if (input.reminderTimeISO || input.reminderType) {
+      await createOrUpdateGoalReminder(goal, input.reminderTimeISO ?? null);
+    }
+
+    return goal;
+  };
+
+  const editGoal = async (goal: Goal) => {
+    setGoals((p) => p.map((g) => (g.id === goal.id ? goal : g)));
+    await createOrUpdateGoalReminder(goal, goal.reminderTimeISO ?? null);
+  };
+
+  const createOrUpdateGoalReminder = async (goal: Goal, specificTime?: string | null) => {
+    const existing = reminders.filter((r) => r.goalId === goal.id);
+
+    if (!specificTime && existing.length === 0) return;
+
+    let scheduleDate: Date | null = specificTime ? new Date(specificTime) : null;
+    if (scheduleDate && isNaN(scheduleDate.getTime())) scheduleDate = null;
+
+    if (scheduleDate) {
+      for (const r of existing) {
+        if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
       }
 
-      return task;
-    },
-    []
-  );
+      const notifId = await scheduleReminder(goal.title, goal.description ?? "", scheduleDate, false).catch(() => null);
 
-  const removeTask = useCallback((id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
-  const toggleTaskCompletion = useCallback((id: string) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, completed: !t.completed } : t
-      )
-    );
-
-    // mark linked reminders as interacted
-    setReminders((prev) =>
-      prev.map((r) =>
-        r.taskId === id ? { ...r, interacted: true } : r
-      )
-    );
-  }, []);
-
-  // ==============================
-  // GOAL FUNCTIONS
-  // ==============================
-
-  const addGoal = useCallback(
-    async (payload: Omit<Goal, "id" | "progress">) => {
-      const id = Date.now().toString();
-      const goal: Goal = {
-        id,
-        title: payload.title,
-        description: payload.description,
-        targetDate: payload.targetDate,
-        progress: 0,
-        target: payload.target || 1,
-        unit: payload.unit,
+      const rem: Reminder = {
+        id: existing[0]?.id ?? makeId("r_"),
+        title: goal.title,
+        message: goal.description,
+        dateTimeISO: scheduleDate.toISOString(),
+        repeat: "none",
+        repeatIntervalDays: null,
+        taskId: null,
+        goalId: goal.id,
+        interacted: existing[0]?.interacted ?? false,
+        notificationId: notifId ?? null,
+        priority: goal.priority,
+        note: existing[0]?.note ?? null,
       };
-      setGoals((prev) => [goal, ...prev]);
-      return goal;
-    },
-    []
-  );
 
-  const updateGoalProgress = useCallback((id: string, delta: number) => {
-    setGoals((prev) =>
-      prev.map((g) =>
-        g.id === id
-          ? { ...g, progress: Math.min(g.progress + delta, g.target) }
-          : g
-      )
+      setReminders((p) => [...p.filter((r) => r.goalId !== goal.id), rem]);
+    }
+  };
+
+  const removeGoal = async (id: string) => {
+    const linked = reminders.filter((r) => r.goalId === id);
+    undoRef.current = { action: "delete", payload: { goals: goals.filter((g) => g.id === id), reminders: linked } };
+
+    for (const r of linked) if (r.notificationId) await cancelReminder(r.notificationId).catch(() => {});
+
+    setReminders((p) => p.filter((r) => r.goalId !== id));
+    setGoals((p) => p.filter((g) => g.id !== id));
+  };
+
+  const updateGoalProgress = (id: string, delta: number) => {
+    setGoals((p) =>
+      p.map((g) => {
+        if (g.id !== id) return g;
+        const before = g.progress;
+        const after = Math.min(g.target, Math.max(0, g.progress + delta));
+        undoRef.current = { action: "progress", payload: { id, before, after } };
+        return { ...g, progress: after };
+      })
     );
-  }, []);
+  };
 
-  const removeGoal = useCallback((id: string) => {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
-  }, []);
+  /* -------------------- REMINDERS -------------------- */
+  const addReminder = async (input: ReminderInput): Promise<Reminder> => {
+    const id = makeId("r_");
+    let notificationId: string | null = null;
 
-  // ==============================
-  // REMINDER FUNCTIONS
-  // ==============================
-
-  const addReminder = useCallback(
-    async (payload: {
-      title: string;
-      message?: string;
-      dateTimeISO: string;
-      repeat?: RepeatType;
-      taskId?: string | null;
-    }) => {
-      try {
-        const id = Date.now().toString();
-        const repeat = payload.repeat ?? "none";
-
-        const notificationId = await scheduleReminder(
-          payload.title,
-          payload.message || "",
-          payload.dateTimeISO,
-          repeat
-        );
-
-        const reminder: Reminder = {
-          id,
-          title: payload.title,
-          message: payload.message,
-          dateTimeISO: payload.dateTimeISO,
-          repeat,
-          taskId: payload.taskId ?? null,
-          notificationId: notificationId ?? null,
-          interacted: false,
-        };
-
-        setReminders((prev) => [reminder, ...prev]);
-        return reminder;
-      } catch (err) {
-        console.warn("addReminder failed:", err);
-        return null;
+    try {
+      const d = new Date(input.dateTimeISO);
+      if (!isNaN(d.getTime())) {
+        notificationId = (await scheduleReminder(input.title, input.message ?? "", d, input.repeat === "daily")) ?? null;
       }
-    },
-    []
-  );
+    } catch {}
 
-  const removeReminder = useCallback(
-    async (id: string) => {
-      const target = reminders.find((r) => r.id === id);
-      if (target?.notificationId) {
-        await cancelNotification(target.notificationId);
+    const rem: Reminder = {
+      id,
+      title: input.title,
+      message: input.message,
+      dateTimeISO: input.dateTimeISO,
+      repeat: input.repeat ?? "none",
+      repeatIntervalDays: input.repeatIntervalDays ?? null,
+      taskId: input.linkedTaskId ?? null,
+      goalId: input.linkedGoalId ?? null,
+      interacted: false,
+      notificationId,
+      priority: input.priority ?? "medium",
+      note: input.note ?? null,
+    };
+
+    setReminders((p) => [...p, rem]);
+    return rem;
+  };
+
+  const removeReminder = async (id: string) => {
+    const rem = reminders.find((r) => r.id === id);
+    undoRef.current = { action: "delete", payload: { reminders: reminders.filter((r) => r.id === id) } };
+
+    if (rem?.notificationId) await cancelReminder(rem.notificationId).catch(() => {});
+    setReminders((p) => p.filter((r) => r.id !== id));
+  };
+
+  /* -------------------- export/import -------------------- */
+  const exportData = async () => exportDataToJSON().catch(() => null);
+
+  const importData = async (json: string) => {
+    const ok = await importDataFromJSON(json);
+    if (ok) {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setTasks(parsed.tasks ?? []);
+        setGoals(parsed.goals ?? []);
+        setReminders(parsed.reminders ?? []);
       }
-      setReminders((prev) => prev.filter((r) => r.id !== id));
-    },
-    [reminders]
-  );
+    }
+    return ok;
+  };
 
-  // ==============================
-  // GENERIC addItem (used by modal input)
-  // ==============================
+  /* -------------------- UNDO -------------------- */
+  const undoLast = async () => {
+    if (!undoRef.current) return;
+    const { action, payload } = undoRef.current;
 
-  const addItem = useCallback(
-    async (tabName: "Tugas" | "Tujuan" | "Pengingat", payload: any) => {
-      if (tabName === "Tugas") return addTask(payload);
-      if (tabName === "Tujuan") return addGoal(payload);
-      return addReminder(payload);
-    },
-    [addTask, addGoal, addReminder]
-  );
+    if (action === "delete" && payload) {
+      if (payload.tasks) setTasks((p) => [...p, ...payload.tasks]);
+      if (payload.goals) setGoals((p) => [...p, ...payload.goals]);
 
-  // ==============================
-  // PROVIDER VALUE
-  // ==============================
+      if (payload.reminders) {
+        for (const r of payload.reminders) {
+          try {
+            let notificationId = r.notificationId;
+            if (!notificationId) {
+              const dt = new Date(r.dateTimeISO);
+              if (!isNaN(dt.getTime())) notificationId = (await scheduleReminder(r.title, r.message ?? "", dt, r.repeat === "daily")) ?? null;
+            }
+            setReminders((p) => [...p, { ...r, notificationId }]);
+          } catch {
+            setReminders((p) => [...p, r]);
+          }
+        }
+      }
+    } else if (action === "progress" && payload) {
+      setGoals((p) => p.map((g) => (g.id === payload.id ? { ...g, progress: payload.before } : g)));
+    }
 
-  const value: AppContextType = {
+    undoRef.current = null;
+  };
+
+  const value: AppContextValue = {
     tasks,
     goals,
     reminders,
     addTask,
+    editTask,
     removeTask,
     toggleTaskCompletion,
     addGoal,
-    updateGoalProgress,
+    editGoal,
     removeGoal,
+    updateGoalProgress,
     addReminder,
     removeReminder,
-    addItem,
+    exportData,
+    importData,
+    undoLast,
   };
 
-  return (
-    <AppContext.Provider value={value}>{children}</AppContext.Provider>
-  );
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
-// ==============================
-// HOOK
-// ==============================
-
-export const useAppContext = () => {
-  const ctx = useContext(AppContext);
-  if (!ctx)
-    throw new Error("useAppContext must be used within an AppProvider");
-  return ctx;
-};
-
-export default AppProvider;
+export const useAppContext = () => useContext(AppContext);
+export default AppContext;

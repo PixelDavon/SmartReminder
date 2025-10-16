@@ -1,43 +1,54 @@
 // app/(tabs)/tujuan.tsx
-import ProgressBar from "@components/ProgressBar";
-import { useAppContext } from "@context/AppContext";
-import { Ionicons } from "@expo/vector-icons";
-import React from "react";
-import {
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React from 'react';
+import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { useSnackbar } from '@/src/context/SnackbarContext';
+import ProgressBar from '@components/ProgressBar';
+import { useAppContext } from '@context/AppContext';
+import { formatDisplayDate } from '@utils/dateHelpers';
+import { useEditModal } from './_layout';
 
 export default function Tujuan() {
-  const { goals, updateGoalProgress, removeGoal } = useAppContext();
+  const { goals, updateGoalProgress, removeGoal, undoLast } = useAppContext();
+  const insets = useSafeAreaInsets();
+  const snackbar = useSnackbar();
+  const editModal = useEditModal();
 
-  const renderGoal = ({ item }: any) => {
-    const pct = Math.round((item.progress / item.target) * 100);
+  const confirmDelete = (id: string) => {
+    Alert.alert('Hapus tujuan', 'Yakin ingin menghapus tujuan ini?', [
+      { text: 'Batal', style: 'cancel' },
+      {
+        text: 'Hapus',
+        style: 'destructive',
+        onPress: () => {
+          removeGoal(id);
+          snackbar?.showUndo(undoLast);
+        },
+      },
+    ]);
+  };
+
+  const renderItem = ({ item }: { item: any }) => {
+    const pct = item.target > 0 ? Math.round((item.progress / item.target) * 100) : 0;
     const isDone = pct >= 100;
 
     return (
       <View style={styles.card}>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>{item.title}</Text>
+          {item.description ? <Text style={styles.desc}>{item.description}</Text> : null}
 
-          {item.description ? (
-            <Text style={styles.desc}>{item.description}</Text>
-          ) : null}
-
-          <ProgressBar value={pct} />
+          <View style={{ marginTop: 8 }}>
+            <ProgressBar value={pct} />
+          </View>
 
           <Text style={styles.meta}>
-            {item.progress}/{item.target} {item.unit ?? ""}
-            {" • "}
-            {pct}%
+            {item.progress}/{item.target} {item.unit ?? ''} • {pct}%
           </Text>
 
-          {isDone && (
-            <Text style={styles.completed}>🎯 Tujuan tercapai!</Text>
-          )}
+          {item.targetDate ? <Text style={styles.meta}>Target: {formatDisplayDate(item.targetDate)}</Text> : null}
+          {isDone && <Text style={styles.done}>🎯 Tujuan tercapai!</Text>}
         </View>
 
         <View style={styles.actions}>
@@ -45,16 +56,32 @@ export default function Tujuan() {
             <TouchableOpacity
               onPress={() => updateGoalProgress(item.id, 1)}
               style={styles.actionBtn}
+              accessibilityLabel="Tambah progress"
             >
-              <Ionicons name="add-circle" size={26} color="#2563eb" />
+              <Text style={styles.plus}>＋</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity
+            onPress={() => updateGoalProgress(item.id, -1)}
+            style={styles.actionBtn}
+            accessibilityLabel="Kurangi progress"
+          >
+            <Text style={styles.minus}>−</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
-            onPress={() => removeGoal(item.id)}
+            onPress={() => confirmDelete(item.id)}
             style={styles.actionBtn}
+            accessibilityLabel="Hapus tujuan"
           >
-            <Ionicons name="trash" size={22} color="#c23030" />
+            <Text style={styles.del}>🗑️</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => editModal?.openEditModal('Tujuan', item)}
+            style={styles.actionBtn}
+            accessibilityLabel="Edit tujuan"
+          >
+            <Text style={styles.edit}>✏️</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -62,71 +89,41 @@ export default function Tujuan() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: Math.max(16, insets.bottom + 16) }]}>
       <FlatList
-        data={goals}
+        data={goals.slice().sort((a, b) => (b.progress / Math.max(1, b.target)) - (a.progress / Math.max(1, a.target)))}
         keyExtractor={(i) => i.id}
-        renderItem={renderGoal}
-        ListEmptyComponent={
-          <Text style={styles.empty}>Belum ada tujuan.</Text>
-        }
-        contentContainerStyle={
-          goals.length === 0 ? { flex: 1, justifyContent: "center" } : undefined
-        }
+        renderItem={renderItem}
+        ListEmptyComponent={<Text style={styles.empty}>Belum ada tujuan.</Text>}
+        contentContainerStyle={goals.length === 0 ? styles.emptyContainer : undefined}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 12,
-    backgroundColor: "transparent", // use transparent so full app background shows
-  },
-  empty: {
-    textAlign: "center",
-    color: "#666",
-    fontSize: 16,
-  },
+  container: { flex: 1, padding: 12, backgroundColor: 'transparent' },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  empty: { textAlign: 'center', color: '#666', fontSize: 16 },
   card: {
-    backgroundColor: "#fff",
+    backgroundColor: '#fff',
     padding: 14,
     borderRadius: 10,
     marginBottom: 10,
-    flexDirection: "row",
-    shadowColor: "#000",
+    flexDirection: 'row',
+    shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
-  title: {
-    fontWeight: "700",
-    fontSize: 16,
-    color: "#111",
-  },
-  desc: {
-    color: "#555",
-    marginTop: 6,
-    fontSize: 14,
-  },
-  meta: {
-    color: "#777",
-    marginTop: 8,
-    fontSize: 12,
-  },
-  completed: {
-    marginTop: 6,
-    color: "#16a34a",
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  actions: {
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 6,
-  },
-  actionBtn: {
-    padding: 8,
-  },
+  title: { fontWeight: '700', fontSize: 16, color: '#111' },
+  desc: { color: '#555', marginTop: 6, fontSize: 14 },
+  meta: { color: '#777', marginTop: 8, fontSize: 12 },
+  done: { marginTop: 6, color: '#16a34a', fontWeight: '600', fontSize: 13 },
+  actions: { marginLeft: 8, justifyContent: 'center', alignItems: 'center', flexDirection: 'row' },
+  actionBtn: { padding: 8 },
+  plus: { fontSize: 22, color: '#2563eb' },
+  minus: { fontSize: 22, color: '#888' },
+  del: { fontSize: 18, color: '#c23030' },
+  edit: { fontSize: 18, color: '#007bff' },
 });
