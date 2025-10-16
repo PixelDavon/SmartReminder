@@ -1,13 +1,18 @@
-// app/(tabs)/tujuan.tsx
-import React, { useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
 import { useSnackbar } from '@/src/context/SnackbarContext';
 import { Goal } from '@/src/models/dataModels';
 import ProgressBar from '@components/ProgressBar';
 import { useAppContext } from '@context/AppContext';
 import { formatDisplayDate } from '@utils/dateHelpers';
+import React, { useMemo, useState } from 'react';
+import {
+  Alert,
+  SectionList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEditModal } from './_layout';
 
 const getPriorityStyle = (priority?: string) => {
@@ -19,17 +24,26 @@ const getPriorityStyle = (priority?: string) => {
   }
 };
 
+const groupByTargetDate = (goals: Goal[]) => {
+  const map: Record<string, Goal[]> = {};
+  for (const g of goals) {
+    const key = g.targetDate ? formatDisplayDate(g.targetDate) : 'Tanpa tanggal';
+    if (!map[key]) map[key] = [];
+    map[key].push(g);
+  }
+  return Object.entries(map).map(([title, data]) => ({ title, data }));
+};
+
 export default function Tujuan() {
   const { goals, updateGoalProgress, removeGoal, undoLast } = useAppContext();
   const insets = useSafeAreaInsets();
   const snackbar = useSnackbar();
   const editModal = useEditModal();
 
-  const [sortMode, setSortMode] = useState<'progress' | 'priority'>('priority');
+  const [sortMode, setSortMode] = useState<'priority' | 'progress'>('priority');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  const toggleSortMode = () => setSortMode((m) => (m === 'priority' ? 'progress' : 'priority'));
-  const toggleSortOrder = () => setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+  const [showCompleted, setShowCompleted] = useState(true);
+  const [showNotCompleted, setShowNotCompleted] = useState(true);
 
   const confirmDelete = (id: string) => {
     Alert.alert('Hapus tujuan', 'Yakin ingin menghapus tujuan ini?', [
@@ -60,7 +74,11 @@ export default function Tujuan() {
     });
   };
 
-  const sortedGoals = sortGoals(goals);
+  const completed = sortGoals(goals.filter((g) => g.target > 0 && g.progress >= g.target));
+  const notCompleted = sortGoals(goals.filter((g) => g.target === 0 || g.progress < g.target));
+
+  const groupedCompleted = useMemo(() => groupByTargetDate(completed), [completed]);
+  const groupedNotCompleted = useMemo(() => groupByTargetDate(notCompleted), [notCompleted]);
 
   const renderItem = ({ item }: { item: Goal }) => {
     const pct = item.target > 0 ? Math.round((item.progress / item.target) * 100) : 0;
@@ -106,7 +124,6 @@ export default function Tujuan() {
           >
             <Text style={styles.minus}>−</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             onPress={() => confirmDelete(item.id)}
             style={styles.actionBtn}
@@ -114,7 +131,6 @@ export default function Tujuan() {
           >
             <Text style={styles.del}>🗑️</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             onPress={() => editModal?.openEditModal('Tujuan', item)}
             style={styles.actionBtn}
@@ -131,24 +147,64 @@ export default function Tujuan() {
     <View style={[styles.container, { paddingBottom: Math.max(16, insets.bottom + 16) }]}>
       {/* Header Controls */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={toggleSortMode} style={styles.headerBtn}>
+        <TouchableOpacity
+          onPress={() => setSortMode((m) => (m === 'priority' ? 'progress' : 'priority'))}
+          style={styles.headerBtn}
+        >
           <Text style={styles.headerText}>
             Urut: {sortMode === 'priority' ? 'Prioritas' : 'Progress'}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={toggleSortOrder} style={styles.headerBtn}>
+        <TouchableOpacity
+          onPress={() => setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'))}
+          style={styles.headerBtn}
+        >
           <Text style={styles.headerText}>Arah: {sortOrder === 'desc' ? '↓' : '↑'}</Text>
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={sortedGoals}
-        keyExtractor={(i) => i.id}
-        renderItem={renderItem}
-        ListEmptyComponent={<Text style={styles.empty}>Belum ada tujuan.</Text>}
-        contentContainerStyle={goals.length === 0 ? styles.emptyContainer : undefined}
-      />
+      {/* Not Completed Section */}
+      <TouchableOpacity
+        onPress={() => setShowNotCompleted(!showNotCompleted)}
+        style={styles.sectionHeader}
+      >
+        <Text style={styles.sectionTitle}>
+          {showNotCompleted ? '▼' : '▶'} Belum Tercapai ({notCompleted.length})
+        </Text>
+      </TouchableOpacity>
+      {showNotCompleted && (
+        <SectionList
+          sections={groupedNotCompleted}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.groupTitle}>{title}</Text>
+          )}
+          ListEmptyComponent={<Text style={styles.empty}>Belum ada tujuan aktif.</Text>}
+        />
+      )}
+
+      {/* Completed Section */}
+      <TouchableOpacity
+        onPress={() => setShowCompleted(!showCompleted)}
+        style={styles.sectionHeader}
+      >
+        <Text style={styles.sectionTitle}>
+          {showCompleted ? '▼' : '▶'} Tercapai ({completed.length})
+        </Text>
+      </TouchableOpacity>
+      {showCompleted && (
+        <SectionList
+          sections={groupedCompleted}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.groupTitle}>{title}</Text>
+          )}
+          ListEmptyComponent={<Text style={styles.empty}>Belum ada tujuan tercapai.</Text>}
+        />
+      )}
     </View>
   );
 }
@@ -158,7 +214,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   headerBtn: { padding: 8, backgroundColor: '#f3f4f6', borderRadius: 8 },
   headerText: { fontWeight: '600', color: '#333' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  sectionHeader: { marginTop: 12, marginBottom: 6 },
+  sectionTitle: { fontWeight: '700', fontSize: 16, color: '#111' },
+  groupTitle: { fontWeight: '600', fontSize: 14, marginTop: 8, color: '#555' },
   empty: { textAlign: 'center', color: '#666', fontSize: 14, marginVertical: 8 },
   card: {
     backgroundColor: '#fff',
